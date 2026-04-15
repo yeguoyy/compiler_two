@@ -97,8 +97,19 @@ public class ParseRegex {
                 stack.push(knode);
             }
             else if (look == '(') {
+                int Count = 1;
+                for (char tempc : this.queue) {
+                    if (tempc == '(') { // left parenthesis '('
+                        Count++;
+                    } else if (tempc == ')') { // right parenthesis ')'
+                        Count--;
+                    }
+                }
+                if (Count > 0) {
+                    System.out.println("not a legal regex!(')' is missing.)");
+                    return null;
+                }
                 RegexTreeNode lnode = new RegexTreeNode('(', 4, null, null);
-
                 stack.push(lnode);
                 //how about the case of "...(..." (right parenthesis is missing)
             }
