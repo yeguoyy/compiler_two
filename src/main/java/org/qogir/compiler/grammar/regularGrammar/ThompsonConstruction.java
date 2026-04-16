@@ -4,7 +4,7 @@ import org.qogir.compiler.FA.State;
 import org.qogir.compiler.util.graph.LabelEdge;
 import org.qogir.compiler.util.tree.DefaultTreeNode;
 
-import java.util.ArrayDeque;
+import java.util.ArrayList;
 
 public class ThompsonConstruction {
     private static final Character EPSILON = 'ε';
@@ -26,12 +26,18 @@ public class ThompsonConstruction {
                 return tnfa;
 
             case 1: // 连接节点 (-)
-                RegexTreeNode leftChild = (RegexTreeNode) node.getFirstChild();
-                RegexTreeNode rightChild = (RegexTreeNode) node.getLastChild();
-
-                TNFA nfa1 = translate(leftChild, root);
-                TNFA nfa2 = translate(rightChild, root);
-                return buildConcatNFA(nfa1, nfa2);
+                ArrayList<RegexTreeNode> Childs = new ArrayList<>();
+                RegexTreeNode Child = (RegexTreeNode) node.getFirstChild();
+                while(Child != null) {
+                    Childs.add(Child);
+                    Child = (RegexTreeNode) Child.getNextSibling();
+                }
+                ArrayList<TNFA> nfas = new ArrayList<>();
+                for (RegexTreeNode child : Childs) {
+                    TNFA nfa = translate(child, root);
+                    nfas.add(nfa);
+                }
+                return buildConcatNFA(nfas);
 
             case 2: // 选择节点 (|)
                 RegexTreeNode leftPart = (RegexTreeNode) node.getFirstChild();
@@ -56,24 +62,33 @@ public class ThompsonConstruction {
      * 2. 构建连接 NFA (Concatenation)
      * 结构: [NFA1] --ε--> [NFA2]
      */
-    private TNFA buildConcatNFA(TNFA nfa1, TNFA nfa2) {
-        State nfa1Accept = nfa1.getAcceptingState();
-        State nfa2Start = nfa2.getStartState();
-        State nfa2Accept = nfa2.getAcceptingState();
+    private TNFA buildConcatNFA(ArrayList<TNFA> nfas) {
+        if(nfas.isEmpty()){
+            return null;
+        }
+        if(nfas.size() == 1){
+            return nfas.get(0);
+        }
+        TNFA nfa1 = nfas.get(0);
+        for(int i = 1; i < nfas.size(); i++) {
+            TNFA nfa2 = nfas.get(i);
+            State nfa1Accept = nfa1.getAcceptingState();
+            State nfa2Start = nfa2.getStartState();
+            State nfa2Accept = nfa2.getAcceptingState();
 
-        // 合并 nfa2 到 nfa1
-        nfa1.getTransitTable().merge(nfa2.getTransitTable());
+            // 合并 nfa2 到 nfa1
+            nfa1.getTransitTable().merge(nfa2.getTransitTable());
 
-        // 添加 ε 连接：nfa1接受状态 → nfa2开始状态
-        nfa1.getTransitTable().addEdge(nfa1Accept, nfa2Start, EPSILON);
+            // 添加 ε 连接：nfa1接受状态 → nfa2开始状态
+            nfa1.getTransitTable().addEdge(nfa1Accept, nfa2Start, EPSILON);
 
-        // 更新状态类型
-        nfa1Accept.setType(State.MIDDLE);
-        nfa2Start.setType(State.MIDDLE);
+            // 更新状态类型
+            nfa1Accept.setType(State.MIDDLE);
+            nfa2Start.setType(State.MIDDLE);
 
-        // 更新 nfa1 的接受状态为 nfa2 的接受状态
-        nfa1.setAcceptingState(nfa2Accept);
-
+            // 更新 nfa1 的接受状态为 nfa2 的接受状态
+            nfa1.setAcceptingState(nfa2Accept);
+        }
         return nfa1;
     }
 
