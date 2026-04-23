@@ -26,6 +26,7 @@ public class StateMinimization {
 //      Map<HashMap<Integer, State>, State> dfaStateMap = new HashMap<>();// DFA状态映射表 旧状态集合 -> 新状态
         List<Set<State>> stateSetList = new ArrayList<>();//用于分组
         LabeledDirectedGraph<State> originalGraph = dfa.getTransitTable();
+        ArrayDeque<String> stepQueue = new ArrayDeque<>();
 
         //initialize
         for (int i = 0; i <= 2; i++){
@@ -37,51 +38,51 @@ public class StateMinimization {
             }
             if (!group.isEmpty()) stateSetList.add(group);
         }
+        recordDistinguishSteps(stepQueue, stateSetList, "initial split");
         Set<Character> alphabet = getAlphabet(originalGraph);
 
         //分离集合
         boolean isChanged = true;
         while (isChanged) {
             isChanged = false;
-            List<Set<State>> newStateSetList = new ArrayList<>();
-            for(Set<State> currentGroup: stateSetList){
-                //如果集合中只有一个元素，无法再分组
-                if(currentGroup.size() <= 1){
-                    newStateSetList.add(currentGroup);
-                    continue;
-                }
+            for (char c : alphabet) {
+                List<Set<State>> newStateSetList = new ArrayList<>();
+                for(Set<State> currentGroup: stateSetList){
+                    //如果集合中只有一个元素，无法再分组
+                    if(currentGroup.size() <= 1){
+                        newStateSetList.add(currentGroup);
+                        continue;
+                    }
 
-                //获取状态集合的“行为签名”，用于存储和划分不同组的状态
-                Map<List<Integer>, Set<State>> splitBuckets = new HashMap<>();
-                for (State s : currentGroup) {
-                    // 计算状态 s 的“行为签名”
-                    List<Integer> signature = new ArrayList<>(); //自身类型+状态集编号
-
-                    for (char c : alphabet) {
+                    //获取状态集合的“行为签名”，用于存储和划分不同组的状态
+                    Map<Integer, Set<State>> splitBuckets = new HashMap<>();
+                    for (State s : currentGroup) {
                         State nextState = getSuccessor(originalGraph, s, c);
                         int targetGroupIndex = -1; // -1 表示死路（没有跳转）
                         if (nextState != null) {
                             // 如果不是空的，找到这个状态的状态集合编号
                             targetGroupIndex = stateSetList.indexOf(findGroup(stateSetList, nextState));
                         }
-                        signature.add(targetGroupIndex);
+                        // 添加状态 s 到对应的组 （循环后会把这个集合全部s都添加进去）
+                        splitBuckets.computeIfAbsent(targetGroupIndex, k -> new HashSet<>()).add(s);
                     }
-                    // 添加状态 s 到对应的组 （循环后会把这个集合全部s都添加进去）
-                    splitBuckets.computeIfAbsent(signature, k -> new HashSet<>()).add(s);
+
+                    // 如果拆分出的桶多于 1 个，说明 currentGroup 需要拆分
+                    if (splitBuckets.size() > 1) {
+                        isChanged = true;
+                        // 将拆分后的每个桶加入新的划分列表
+                        newStateSetList.addAll(splitBuckets.values());
+                    } else {
+                        // 不需要拆分，保持原样
+                        newStateSetList.add(currentGroup);
+                    }
                 }
-                // 如果拆分出的桶多于 1 个，说明 currentGroup 需要拆分
-                if (splitBuckets.size() > 1) {
-                    isChanged = true;
-                    // 将拆分后的每个桶加入新的划分列表
-                    newStateSetList.addAll(splitBuckets.values());
-                } else {
-                    // 不需要拆分，保持原样
-                    newStateSetList.add(currentGroup);
-                }
+                //更新
+                stateSetList = newStateSetList;
+                recordDistinguishSteps(stepQueue, stateSetList, "end of_"+ c);
             }
-            //更新
-            stateSetList = newStateSetList;
         }
+        showDistinguishSteps(stepQueue,stateSetList);
 
         //处理边
         RDFA miniDFA = new RDFA();
@@ -174,51 +175,67 @@ public class StateMinimization {
         }
         return null;
     }
-    //    /**
-//     * Used for showing the distinguishing process of state miminization algorithm
-//     *
-//     * @param stepQueue holds all distinguishing steps
-//     * @param GroupSet  is the set of equivalent state groups
-//     * @param memo      remarks
-//     */
-//    public void recordDistinguishSteps(ArrayDeque<String> stepQueue, HashMap<Integer, HashMap<Integer, State>> GroupSet, String memo) {
-//        String str = "";
-//        str = GroupSetToString(GroupSet);
-//        str += ":" + memo;
-//        stepQueue.add(str);
-//        System.out.println(stepQueue);
-//    }
-//
-//    /**
-//     * Display the equivalent state groups
-//     *
-//     * @param stepQueue
-//     */
-//    public void showDistinguishSteps(ArrayDeque<String> stepQueue) {
-//        int step = 0;
-//        String str = "";
-//        while (!stepQueue.isEmpty()) {
-//            str = stepQueue.poll();
-//            System.out.println("Step" + step++ + ":\t" + str + "\r");
-//        }
-//    }
-
-    private String GroupSetToString(HashMap<Integer,HashMap<Integer, State>> GroupSet){
-        String str = "";
-        for( Integer g: GroupSet.keySet()){
-            String tmp = GroupToString(GroupSet.get(g));
-            str += g +  ":" + tmp + "\t" ;
+    /**
+     * 记录区分步骤
+     *
+     * @param stepQueue   用于存储步骤的队列
+     * @param stateSetList 当前的等价类分组列表 (List<Set<State>>)
+     * @param memo        备注信息
+     */
+    public void recordDistinguishSteps(ArrayDeque<String> stepQueue, List<Set<State>> stateSetList, String memo) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < stateSetList.size(); i++) {
+            Set<State> group = stateSetList.get(i);
+            if (!group.isEmpty()) {
+                // 拼接 "0:{...}\t"
+                sb.append(i).append(":").append(setToString(group)).append("\t");
+            }
         }
-        return str;
+
+        // 3. 添加备注
+        sb.append(":").append(memo);
+
+        // 4. 存入队列并打印
+        String resultStr = sb.toString();
+        stepQueue.add(resultStr);
+//      System.out.println(resultStr);
     }
 
-    private String GroupToString(HashMap<Integer, State> group){
-        String str = "";
-        for(Integer k : group.keySet()){
-            str += group.get(k).getId() + ":" + group.get(k).getType() + ",";
+    /**
+     * 展示所有步骤
+     *
+     * @param stepQueue
+     */
+    public void showDistinguishSteps(ArrayDeque<String> stepQueue, List<Set<State>> stateSetList) {
+        int step = 0;
+        System.out.println("GroupSet.size:"+stateSetList.size());
+        while (!stepQueue.isEmpty()) {
+            String str = stepQueue.poll();
+            // 注意：这里去掉了 \r，使用 println 自动换行，避免覆盖显示导致看不清历史
+            System.out.println("Step" + step++ + ":\t" + str);
         }
-        if(str.length()!=0) str = str.substring(0,str.length()-1);
-        str = "{" + str + "}";
-        return str;
+    }
+
+    private String setToString(Set<State> group) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+
+        // 将 Set 转为 List 并排序，确保输出总是按 ID 从小到大排列
+        // 如果不排序，HashSet 的输出顺序是随机的，会导致测试失败
+        List<State> sortedStates = new ArrayList<>(group);
+        Collections.sort(sortedStates, Comparator.comparingInt(State::getId));
+
+        for (int i = 0; i < sortedStates.size(); i++) {
+            State s = sortedStates.get(i);
+            // 拼接 "ID:Type"
+            sb.append(s.getId()).append(":").append(s.getType());
+
+            // 逗号分隔符
+            if (i < sortedStates.size() - 1) {
+                sb.append(",");
+            }
+        }
+        sb.append("}");
+        return sb.toString();
     }
 }
